@@ -97,16 +97,76 @@
   </div>
 
   <script>
-    // REPLACE THESE TWO LINES WITH YOUR SUPABASE SETTINGS > API DETAILS
     const SUPABASE_URL = 'https://mborjinayvjckvamvnst.supabase.co';
-    const SUPABASE_ANON_KEY = 'sb_publishable_GGDHbD8nVBXrNnZ1cdqIXg_Qy263w5e';
+    const SUPABASE_ANON_KEY = 'sb_publishable_GGDhbD8nVBXrNnZ1cdqIXg_Qy263w5e';
 
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    supabaseClient.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        const msg = document.getElementById('status-msg');
+    let isSessionReady = false;
+
+    // Handle authentication setup on page load
+    async function initRecoverySession() {
+      const msg = document.getElementById('status-msg');
+      const hash = window.location.hash;
+      const searchParams = new URLSearchParams(window.location.search);
+      const code = searchParams.get('code');
+
+      // 1. Check if PKCE code flow was passed (?code=...)
+      if (code) {
         msg.className = '';
+        msg.innerText = 'Verifying security token...';
+        const { error } = await supabaseClient.auth.exchangeCodeForSession(code);
+        if (error) {
+          msg.className = 'error';
+          msg.innerText = 'Link expired or invalid: ' + error.message;
+          return;
+        }
+        isSessionReady = true;
+        msg.className = 'success';
+        msg.innerText = 'Authenticated. Please enter your new password.';
+        return;
+      }
+
+      // 2. Check if implicit hash fragment was passed (#access_token=...)
+      if (hash && hash.includes('access_token')) {
+        const hashParams = new URLSearchParams(hash.substring(1));
+        const accessToken = hashParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token');
+
+        if (accessToken && refreshToken) {
+          const { error } = await supabaseClient.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          });
+          if (error) {
+            msg.className = 'error';
+            msg.innerText = 'Failed to restore session: ' + error.message;
+            return;
+          }
+          isSessionReady = true;
+          msg.className = 'success';
+          msg.innerText = 'Authenticated. Please enter your new password.';
+          return;
+        }
+      }
+
+      // 3. Fallback check for an existing session
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      if (session) {
+        isSessionReady = true;
+        msg.className = 'success';
+        msg.innerText = 'Authenticated. Please enter your new password.';
+      } else {
+        msg.className = 'error';
+        msg.innerText = 'Recovery token missing. Please request a new reset link.';
+      }
+    }
+
+    supabaseClient.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
+        isSessionReady = true;
+        const msg = document.getElementById('status-msg');
+        msg.className = 'success';
         msg.innerText = 'Authenticated. Please enter your new password.';
       }
     });
@@ -116,6 +176,16 @@
       const confirmPassword = document.getElementById('confirm-password').value;
       const msg = document.getElementById('status-msg');
       const btn = document.getElementById('submit-btn');
+
+      if (!isSessionReady) {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) {
+          msg.className = 'error';
+          msg.innerText = 'Error: Auth session missing! The reset link might be expired or used. Please request a new one.';
+          return;
+        }
+        isSessionReady = true;
+      }
 
       if (!password || password.length < 6) {
         msg.className = 'error';
@@ -143,12 +213,12 @@
         btn.disabled = false;
       } else {
         msg.className = 'success';
-        msg.innerText = 'Password updated successfully! You can now log in using the mobile app.';
+        msg.innerText = 'Password updated successfully! You can now log into the app.';
         document.getElementById('new-password').style.display = 'none';
         document.getElementById('confirm-password').style.display = 'none';
         btn.style.display = 'none';
       }
     }
+
+    window.addEventListener('DOMContentLoaded', initRecoverySession);
   </script>
-</body>
-</html>
