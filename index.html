@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset Password - Lorenzu</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      background-color: #121212;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+    .card {
+      background-color: #1e1e1e;
+      border: 1px solid #2d2d2d;
+      border-radius: 12px;
+      padding: 32px 24px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      text-align: center;
+    }
+    h2 {
+      margin-top: 0;
+      margin-bottom: 8px;
+      color: #ffffff;
+      font-size: 22px;
+    }
+    p.subtitle {
+      color: #a0a0a0;
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+    input {
+      width: 100%;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      border: 1px solid #3d3d3d;
+      border-radius: 8px;
+      background-color: #2a2a2a;
+      color: #ffffff;
+      font-size: 15px;
+      box-sizing: border-box;
+      outline: none;
+    }
+    input:focus {
+      border-color: #3ecf8e;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      background-color: #3ecf8e;
+      color: #121212;
+      font-weight: 600;
+      font-size: 15px;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    button:hover {
+      opacity: 0.9;
+    }
+    button:disabled {
+      background-color: #555555;
+      cursor: not-allowed;
+    }
+    #status-msg {
+      margin-top: 18px;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .success { color: #3ecf8e; }
+    .error { color: #ff6b6b; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>Reset Password</h2>
+    <p class="subtitle">Enter your new password below.</p>
+
+    <input type="password" id="new-password" placeholder="New password" />
+    <input type="password" id="confirm-password" placeholder="Confirm new password" />
+
+    <button id="submit-btn" onclick="handlePasswordReset()">Update Password</button>
+
+    <div id="status-msg"></div>
+  </div>
+
+  <script>
+    // REPLACE THESE TWO LINES WITH YOUR SUPABASE SETTINGS > API DETAILS
+    const SUPABASE_URL = 'https://mborjinayvjckvamvnst.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_GGDHbD8nVBXrNnZ1cdqIXg_Qy263w5e';
+
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    supabaseClient.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        const msg = document.getElementById('status-msg');
+        msg.className = '';
+        msg.innerText = 'Authenticated. Please enter your new password.';
+      }
+    });
+
+    async function handlePasswordReset() {
+      const password = document.getElementById('new-password').value;
+      const confirmPassword = document.getElementById('confirm-password').value;
+      const msg = document.getElementById('status-msg');
+      const btn = document.getElementById('submit-btn');
+
+      if (!password || password.length < 6) {
+        msg.className = 'error';
+        msg.innerText = 'Password must be at least 6 characters.';
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        msg.className = 'error';
+        msg.innerText = 'Passwords do not match.';
+        return;
+      }
+
+      btn.disabled = true;
+      msg.className = '';
+      msg.innerText = 'Updating password...';
+
+      const { data, error } = await supabaseClient.auth.updateUser({
+        password: password
+      });
+
+      if (error) {
+        msg.className = 'error';
+        msg.innerText = 'Error: ' + error.message;
+        btn.disabled = false;
+      } else {
+        msg.className = 'success';
+        msg.innerText = 'Password updated successfully! You can now log in using the mobile app.';
+        document.getElementById('new-password').style.display = 'none';
+        document.getElementById('confirm-password').style.display = 'none';
+        btn.style.display = 'none';
+      }
+    }
+  </script>
+</body>
+</html>
