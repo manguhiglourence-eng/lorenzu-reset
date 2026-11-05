@@ -31,11 +31,11 @@
     h2 {
       margin-top: 0;
       margin-bottom: 8px;
+      font-size: 24px;
       color: #ffffff;
-      font-size: 22px;
     }
     p.subtitle {
-      color: #a0a0a0;
+      color: #9e9e9e;
       font-size: 14px;
       margin-bottom: 24px;
     }
@@ -43,43 +43,49 @@
       width: 100%;
       padding: 12px 14px;
       margin-bottom: 16px;
+      background-color: #2a2a2a;
       border: 1px solid #3d3d3d;
       border-radius: 8px;
-      background-color: #2a2a2a;
       color: #ffffff;
       font-size: 15px;
       box-sizing: border-box;
       outline: none;
+      transition: border-color 0.2s;
     }
     input:focus {
-      border-color: #3ecf8e;
+      border-color: #10b981;
     }
     button {
       width: 100%;
-      padding: 12px;
+      padding: 14px;
+      background-color: #10b981;
       border: none;
       border-radius: 8px;
-      background-color: #3ecf8e;
-      color: #121212;
+      color: #ffffff;
+      font-size: 16px;
       font-weight: 600;
-      font-size: 15px;
       cursor: pointer;
-      transition: opacity 0.2s;
+      transition: background-color 0.2s, opacity 0.2s;
     }
     button:hover {
-      opacity: 0.9;
+      background-color: #059669;
     }
     button:disabled {
-      background-color: #555555;
+      opacity: 0.6;
       cursor: not-allowed;
     }
     #status-msg {
       margin-top: 18px;
       font-size: 14px;
-      line-height: 1.4;
+      min-height: 20px;
+      word-break: break-word;
     }
-    .success { color: #3ecf8e; }
-    .error { color: #ff6b6b; }
+    .error {
+      color: #ef4444;
+    }
+    .success {
+      color: #10b981;
+    }
   </style>
 </head>
 <body>
@@ -100,34 +106,42 @@
     const SUPABASE_URL = 'https://mborjinayvjckvamvnst.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ib3JqaW5heXZqY2t2YW12bnN0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA3NTkyODEsImV4cCI6MjEwNjMzNTI4MX0.q9xPxBZGSHAyTNFQG7x3tqHIHnB46N9v-S5e59_fA1g';
 
-    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        detectSessionInUrl: true,
+        persistSession: true,
+        autoRefreshToken: true
+      }
+    });
 
     let isSessionReady = false;
 
-    // Handle authentication setup on page load
-    async function initRecoverySession() {
+    function setSuccessState(text) {
+      isSessionReady = true;
       const msg = document.getElementById('status-msg');
-      const hash = window.location.hash;
-      const searchParams = new URLSearchParams(window.location.search);
-      const code = searchParams.get('code');
+      msg.className = 'success';
+      msg.innerText = text || 'Authenticated. Please enter your new password.';
+    }
 
-      // 1. Check if PKCE code flow was passed (?code=...)
-      if (code) {
-        msg.className = '';
-        msg.innerText = 'Verifying security token...';
-        const { error } = await supabaseClient.auth.exchangeCodeForSession(code);
-        if (error) {
-          msg.className = 'error';
-          msg.innerText = 'Link expired or invalid: ' + error.message;
-          return;
-        }
-        isSessionReady = true;
-        msg.className = 'success';
-        msg.innerText = 'Authenticated. Please enter your new password.';
+    function setErrorState(text) {
+      const msg = document.getElementById('status-msg');
+      msg.className = 'error';
+      msg.innerText = text;
+    }
+
+    async function initRecoverySession() {
+      const searchParams = new URLSearchParams(window.location.search);
+      const hash = window.location.hash;
+
+      // 1. Check if error was passed in URL (expired/used link)
+      const errorDescription = searchParams.get('error_description') || 
+        (hash ? new URLSearchParams(hash.substring(1)).get('error_description') : null);
+      if (errorDescription) {
+        setErrorState('Link error: ' + errorDescription.replace(/\+/g, ' '));
         return;
       }
 
-      // 2. Check if implicit hash fragment was passed (#access_token=...)
+      // 2. Direct Hash Extraction (#access_token=...&refresh_token=...)
       if (hash && hash.includes('access_token')) {
         const hashParams = new URLSearchParams(hash.substring(1));
         const accessToken = hashParams.get('access_token');
@@ -139,67 +153,62 @@
             refresh_token: refreshToken
           });
           if (error) {
-            msg.className = 'error';
-            msg.innerText = 'Failed to restore session: ' + error.message;
+            setErrorState('Failed to restore session: ' + error.message);
             return;
           }
-          isSessionReady = true;
-          msg.className = 'success';
-          msg.innerText = 'Authenticated. Please enter your new password.';
+          setSuccessState();
           return;
         }
       }
 
-      // 3. Fallback check for an existing session
+      // 3. Fallback: check if supabase client already established session
       const { data: { session } } = await supabaseClient.auth.getSession();
       if (session) {
-        isSessionReady = true;
-        msg.className = 'success';
-        msg.innerText = 'Authenticated. Please enter your new password.';
+        setSuccessState();
       } else {
-        msg.className = 'error';
-        msg.innerText = 'Recovery token missing. Please request a new reset link.';
+        setTimeout(async () => {
+          const { data: { session: retrySession } } = await supabaseClient.auth.getSession();
+          if (retrySession) {
+            setSuccessState();
+          } else if (!isSessionReady) {
+            setErrorState('Recovery token missing or expired. Please request a new link.');
+          }
+        }, 1500);
       }
     }
 
     supabaseClient.auth.onAuthStateChange(async (event, session) => {
       if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
-        isSessionReady = true;
-        const msg = document.getElementById('status-msg');
-        msg.className = 'success';
-        msg.innerText = 'Authenticated. Please enter your new password.';
+        setSuccessState();
       }
     });
 
     async function handlePasswordReset() {
       const password = document.getElementById('new-password').value;
       const confirmPassword = document.getElementById('confirm-password').value;
-      const msg = document.getElementById('status-msg');
       const btn = document.getElementById('submit-btn');
 
       if (!isSessionReady) {
         const { data: { session } } = await supabaseClient.auth.getSession();
         if (!session) {
-          msg.className = 'error';
-          msg.innerText = 'Error: Auth session missing! The reset link might be expired or used. Please request a new one.';
+          setErrorState('Error: Auth session missing! The reset link might be expired or used. Please request a new one.');
           return;
         }
         isSessionReady = true;
       }
 
       if (!password || password.length < 6) {
-        msg.className = 'error';
-        msg.innerText = 'Password must be at least 6 characters.';
+        setErrorState('Password must be at least 6 characters.');
         return;
       }
 
       if (password !== confirmPassword) {
-        msg.className = 'error';
-        msg.innerText = 'Passwords do not match.';
+        setErrorState('Passwords do not match.');
         return;
       }
 
       btn.disabled = true;
+      const msg = document.getElementById('status-msg');
       msg.className = '';
       msg.innerText = 'Updating password...';
 
@@ -208,8 +217,7 @@
       });
 
       if (error) {
-        msg.className = 'error';
-        msg.innerText = 'Error: ' + error.message;
+        setErrorState('Error: ' + error.message);
         btn.disabled = false;
       } else {
         msg.className = 'success';
@@ -222,3 +230,5 @@
 
     window.addEventListener('DOMContentLoaded', initRecoverySession);
   </script>
+</body>
+</html>
